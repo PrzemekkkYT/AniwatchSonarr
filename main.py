@@ -83,6 +83,27 @@ async def delete_torrent(hashes: str = Form(...)):
     return "Ok."
 
 
+@app.get("/api/v2/app/preferences")
+async def get_preferences():
+    """
+    Sonarr pyta o preferencje klienta (np. globalne limity, ścieżki).
+    Zwracamy podstawowy zestaw konfiguracji, aby przeszedł test.
+    """
+    return {
+        "save_path": "/downloads",
+        "scan_dirs": [],
+        "download_in_slow_mode": False,
+        "queueing_enabled": False,
+        "max_active_downloads": 3,
+        "max_active_torrents": 999,
+        "max_active_uploads": 3,
+        "alt_dl_limit": -1,
+        "alt_up_limit": -1,
+        "dl_limit": -1,
+        "up_limit": -1,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
