@@ -162,7 +162,7 @@ INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@app.get("/api/indexer")
+@app.get("/indexer/api")
 async def torznab_indexer(
     t: str = None, q: str = None, season: int = None, ep: int = None
 ):
