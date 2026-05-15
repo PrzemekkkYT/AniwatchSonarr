@@ -1,3 +1,5 @@
+import datetime
+import email
 from fastapi import FastAPI, Form, UploadFile, File, Response
 from fastapi.responses import PlainTextResponse
 import xml.etree.ElementTree as ET
@@ -184,6 +186,9 @@ async def torznab_indexer(
     e_str = f"{ep:02d}" if ep is not None else "00"
     title_query = q or "Anime"
 
+    now = datetime.datetime.now()
+    rfc_date = email.utils.format_datetime(now)
+
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     item = ET.SubElement(channel, "item")
@@ -192,6 +197,18 @@ async def torznab_indexer(
     ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
     ET.SubElement(item, "guid").text = "test_guid_123"
     ET.SubElement(item, "link").text = "http://test-link.com"
+
+    ET.SubElement(item, "pubDate").text = rfc_date
+
+    ET.SubElement(
+        item,
+        "enclosure",
+        {
+            "url": "http://test-link.com",
+            "length": "1500000000",  # Przykładowy rozmiar 1.5GB
+            "type": "application/x-bittorrent",
+        },
+    )
 
     # Atrybuty Torznab (ważne dla rozpoznania sezonu/odcinka)
     # Wymaga importu namespace, ale dla uproszczenia Sonarr czyta też z tytułu
