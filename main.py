@@ -104,6 +104,22 @@ async def get_preferences():
     }
 
 
+@app.get("/api/v2/torrents/categories")
+async def get_categories():
+    """
+    Sonarr sprawdza dostępne kategorie w kliencie.
+    Zwracamy pusty słownik – Sonarr sam spróbuje dodać swoją kategorię
+    (np. "tv-sonarr"), jeśli będzie jej potrzebował.
+    """
+    return {}
+
+
+@app.post("/api/v2/torrents/createCategory")
+async def create_category(category: str = Form(...)):
+    """Wywoływane, gdy Sonarr tworzy nową kategorię."""
+    return "Ok."
+
+
 if __name__ == "__main__":
     import uvicorn
 
