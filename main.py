@@ -7,7 +7,16 @@ import time
 app = FastAPI()
 
 # Prosta baza danych w pamięci (w produkcji użyj SQLite/JSON)
-downloads = {}
+downloads = {
+    "testowyhash1234567890abcdef": {
+        "name": "Nazwa.Testowego.Serialu.S01E01.1080p.Web-DL",
+        "progress": 0.5,  # 50% pobierania
+        "size": 1500000000,  # ok. 1.5 GB
+        "status": "downloading",  # status pobierania
+        "save_path": "/downloads",  # ścieżka zgodna z mapowaniem w TrueNAS
+        "added_on": 1715800000,
+    }
+}
 
 
 @app.post("/api/v2/auth/login", response_class=PlainTextResponse)
