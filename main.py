@@ -18,8 +18,9 @@ async def login(response: Response):
     return "Ok."
 
 
-@app.get("/api/v2/app/webapiVersion")
+@app.get("/api/v2/app/webapiVersion", response_class=PlainTextResponse)
 async def web_api_version():
+    # Zwracamy czysty tekst bez JSON-owych cudzysłowów
     return "2.8.2"
 
 
