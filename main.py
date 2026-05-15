@@ -180,18 +180,18 @@ async def torznab_indexer(
     # Tutaj docelowo wstawisz logikę przeszukiwania Aniwatch.
     # Na razie zwrócimy jeden testowy wynik, żebyś widział go w Sonarrze.
 
+    s_str = f"{season:02d}" if season is not None else "00"
+    e_str = f"{ep:02d}" if ep is not None else "00"
+    title_query = q or "Anime"
+
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     item = ET.SubElement(channel, "item")
 
-    # Kluczowe pola dla Sonarra:
-    ET.SubElement(item, "title").text = (
-        f"{q or 'Anime'} - S{season:02d}E{ep:02d} - AniWatch"
-    )
-    ET.SubElement(item, "guid").text = "unikalne_id_odcinka_123"
-    ET.SubElement(item, "link").text = (
-        "https://aniwatch.to/watch/twoje-id"  # To trafi do add_torrent
-    )
+    # Teraz używamy bezpiecznych stringów
+    ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
+    ET.SubElement(item, "guid").text = "test_guid_123"
+    ET.SubElement(item, "link").text = "http://test-link.com"
 
     # Atrybuty Torznab (ważne dla rozpoznania sezonu/odcinka)
     # Wymaga importu namespace, ale dla uproszczenia Sonarr czyta też z tytułu
