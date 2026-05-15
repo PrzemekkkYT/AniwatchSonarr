@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Form, UploadFile, File, Response
 from fastapi.responses import PlainTextResponse
+import xml.etree.ElementTree as ET
 from typing import Optional
 import uuid
 import time
@@ -144,6 +145,59 @@ async def create_category(
     """
     print(f"[*] Sonarr utworzył kategorię: {category} ze ścieżką: {savePath}")
     return "Ok."
+
+
+# INDEXER
+INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<caps>
+  <categories>
+    <category id="5000" name="TV"/>
+    <category id="5070" name="TV/Anime"/>
+  </categories>
+  <searching>
+    <search available="yes" supportedParams="q"/>
+    <tv-search available="yes" supportedParams="q,season,ep"/>
+  </searching>
+</caps>
+"""
+
+
+@app.get("/api/indexer")
+async def torznab_indexer(
+    t: str = None, q: str = None, season: int = None, ep: int = None
+):
+    """
+    To jest endpoint Indexera. Sonarr będzie tu wysyłał zapytania o odcinki.
+    """
+
+    # 1. Obsługa zapytania o możliwości (Caps)
+    if t == "caps":
+        return Response(content=INDEXER_CAPS_XML, media_type="application/xml")
+
+    # 2. Obsługa wyszukiwania (Search)
+    print(f"[*] Sonarr szuka: {q} Sezon: {season} Odcinek: {ep}")
+
+    # Tutaj docelowo wstawisz logikę przeszukiwania Aniwatch.
+    # Na razie zwrócimy jeden testowy wynik, żebyś widział go w Sonarrze.
+
+    root = ET.Element("rss", version="2.0")
+    channel = ET.SubElement(root, "channel")
+    item = ET.SubElement(channel, "item")
+
+    # Kluczowe pola dla Sonarra:
+    ET.SubElement(item, "title").text = (
+        f"{q or 'Anime'} - S{season:02d}E{ep:02d} - AniWatch"
+    )
+    ET.SubElement(item, "guid").text = "unikalne_id_odcinka_123"
+    ET.SubElement(item, "link").text = (
+        "https://aniwatch.to/watch/twoje-id"  # To trafi do add_torrent
+    )
+
+    # Atrybuty Torznab (ważne dla rozpoznania sezonu/odcinka)
+    # Wymaga importu namespace, ale dla uproszczenia Sonarr czyta też z tytułu
+
+    xml_data = ET.tostring(root, encoding="utf-8")
+    return Response(content=xml_data, media_type="application/xml")
 
 
 if __name__ == "__main__":
