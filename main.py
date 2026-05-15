@@ -51,26 +51,36 @@ async def add_torrent(
 
 
 @app.get("/api/v2/torrents/info")
-async def torrents_info():
+async def torrents_info(category: Optional[str] = None):
     """
-    Sonarr co kilkanaście sekund pyta o listę torrentów, aby zaktualizować pasek postępu.
+    Sonarr pyta o listę pobieranych rzeczy, często filtrując po kategorii.
+    Nawet jeśli lista jest pusta, musimy zwrócić poprawną strukturę JSON [].
     """
     formatted_list = []
+
     for tid, data in downloads.items():
-        # Udajemy format danych qBittorrent
+        # Opcjonalnie: filtrujemy po kategorii, jeśli Sonarr o to prosi
+        if category and category != data.get("category", category):
+            continue
+
         formatted_list.append(
             {
-                "hash": tid,
-                "name": data["name"],
-                "size": data["size"],
-                "progress": data["progress"],  # Wartość od 0.0 do 1.0
-                "status": data["status"],
-                "save_path": data["save_path"],
-                "added_on": data["added_on"],
+                "hash": str(tid),  # Hash musi być ciągiem znaków (string)
+                "name": str(data["name"]),
+                "size": int(data["size"]),
+                "progress": float(data["progress"]),  # Wartość 0.0 - 1.0
+                "status": str(data["status"]),
+                "save_path": str(data["save_path"]),
+                "added_on": int(data["added_on"]),
                 "upspeed": 0,
-                "dlspeed": 1024 * 1024,  # Udajemy 1MB/s
+                "dlspeed": 1024 * 1024,
+                "category": data.get(
+                    "category", "tv-sonarr"
+                ),  # Sonarr lubi widzieć tu kategorię
             }
         )
+
+    # FastAPI automatycznie zamieni pustą listę [] na poprawny JSON array
     return formatted_list
 
 
