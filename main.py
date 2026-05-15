@@ -114,9 +114,16 @@ async def get_categories():
     return {}
 
 
-@app.post("/api/v2/torrents/createCategory")
-async def create_category(category: str = Form(...)):
-    """Wywoływane, gdy Sonarr tworzy nową kategorię."""
+@app.post("/api/v2/torrents/createCategory", response_class=PlainTextResponse)
+async def create_category(
+    category: str = Form(...),
+    savePath: str = Form(""),  # Sonarr może (ale nie musi) to wysłać
+):
+    """
+    Wywoływane przez Sonarra, gdy próbuje utworzyć dedykowaną kategorię.
+    Zwracamy "Ok.", aby Sonarr myślał, że kategoria została zapisana.
+    """
+    print(f"[*] Sonarr utworzył kategorię: {category} ze ścieżką: {savePath}")
     return "Ok."
 
 
