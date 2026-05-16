@@ -7,6 +7,8 @@ from typing import Optional
 import uuid
 import time
 
+from anikoto import search_anikoto
+
 app = FastAPI()
 
 # Prosta baza danych w pamięci (w produkcji użyj SQLite/JSON)
@@ -182,6 +184,10 @@ async def torznab_indexer(
     # Tutaj docelowo wstawisz logikę przeszukiwania Aniwatch.
     # Na razie zwrócimy jeden testowy wynik, żebyś widział go w Sonarrze.
 
+    anikoto_url = search_anikoto(f"{q} season {season}")
+
+    print(f"Found {anikoto_url}")
+
     s_str = f"{season:02d}" if season is not None else "00"
     e_str = f"{ep:02d}" if ep is not None else "00"
     title_query = q or "Anime"
@@ -196,7 +202,7 @@ async def torznab_indexer(
     # Teraz używamy bezpiecznych stringów
     ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
     ET.SubElement(item, "guid").text = "test_guid_123"
-    ET.SubElement(item, "link").text = "http://test-link.com"
+    ET.SubElement(item, "link").text = anikoto_url
 
     ET.SubElement(item, "pubDate").text = rfc_date
 
@@ -204,7 +210,7 @@ async def torznab_indexer(
         item,
         "enclosure",
         {
-            "url": "http://test-link.com",
+            "url": anikoto_url,
             "length": "1500000000",  # Przykładowy rozmiar 1.5GB
             "type": "application/x-bittorrent",
         },
