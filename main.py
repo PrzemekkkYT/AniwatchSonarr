@@ -184,7 +184,7 @@ async def torznab_indexer(
     # 2. Obsługa wyszukiwania (Search)
     print(f"[*] Sonarr szuka: {q} Sezon: {season} Odcinek: {ep}")
 
-    if q:
+    if q is not None:
         anikoto_id = find_anikoto_id(q)
 
         res = requests.get(f"https://anikotoapi.site/series/{anikoto_id}")
