@@ -198,6 +198,8 @@ async def torznab_indexer(
 
     ep_url = f'https://anikoto.cv/watch/{anime_data["data"]["anime"]["slug"]}/ep-{ep}'
 
+    print(f"{anikoto_id} | {ep_url}")
+
     s_str = f"{season:02d}" if season is not None else "00"
     e_str = f"{ep:02d}" if ep is not None else "00"
     title_query = q or "Anime"
