@@ -1,5 +1,6 @@
 import datetime
 import email
+import json
 from fastapi import FastAPI, Form, UploadFile, File, Response
 from fastapi.responses import PlainTextResponse
 import xml.etree.ElementTree as ET
@@ -7,7 +8,9 @@ from typing import Optional
 import uuid
 import time
 
-from anikoto import search_anikoto
+import requests
+
+from anikoto import find_anikoto_id, search_anikoto
 
 app = FastAPI()
 
@@ -165,14 +168,11 @@ INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </caps>
 """
 
-counter = 0
-
 
 @app.get("/indexer/api")
 async def torznab_indexer(
     t: str = None, q: str = None, season: int = None, ep: int = None
 ):
-    global counter
     """
     To jest endpoint Indexera. Sonarr będzie tu wysyłał zapytania o odcinki.
     """
@@ -187,9 +187,16 @@ async def torznab_indexer(
     # Tutaj docelowo wstawisz logikę przeszukiwania Aniwatch.
     # Na razie zwrócimy jeden testowy wynik, żebyś widział go w Sonarrze.
 
-    anikoto_url = search_anikoto(f"{q} season {season}")
+    # anikoto_url = search_anikoto(f"{q} season {season}")
 
-    print(f"Found {anikoto_url}")
+    # print(f"Found {anikoto_url}")
+
+    anikoto_id = find_anikoto_id(q)
+
+    res = requests.get(f"https://anikotoapi.site/series/{anikoto_id}")
+    anime_data = json.loads(res.text)
+
+    ep_url = f'https://anikoto.cv/watch/{anime_data["data"]["anime"]["slug"]}/ep-{ep}'
 
     s_str = f"{season:02d}" if season is not None else "00"
     e_str = f"{ep:02d}" if ep is not None else "00"
@@ -203,12 +210,11 @@ async def torznab_indexer(
     item = ET.SubElement(channel, "item")
 
     # Teraz używamy bezpiecznych stringów
-    # ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
     ET.SubElement(item, "title").text = (
-        f"{title_query} - S{s_str}E{e_str} | {anikoto_url}"
+        f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
     )
     ET.SubElement(item, "guid").text = f"test_guid_{counter}"
-    ET.SubElement(item, "link").text = anikoto_url
+    ET.SubElement(item, "link").text = ep_url
 
     ET.SubElement(item, "pubDate").text = rfc_date
 
@@ -216,7 +222,7 @@ async def torznab_indexer(
         item,
         "enclosure",
         {
-            "url": anikoto_url,
+            "url": ep_url,
             "length": "1500000000",  # Przykładowy rozmiar 1.5GB
             "type": "application/x-bittorrent",
         },

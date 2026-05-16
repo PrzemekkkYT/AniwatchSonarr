@@ -1,6 +1,31 @@
+import re
 import json
 import requests
 from bs4 import BeautifulSoup
+
+
+def find_anikoto_id(q: str):
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "x-requested-with": "XMLHttpRequest",
+        }
+    )
+
+    url = f"https://anikoto.cz/ajax/anime/search?keyword={q.replace(' ', '+')}"
+
+    ru = session.get(url)
+
+    html = json.loads(ru.text)["result"]["html"]
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.find("a", class_="item")
+
+    r = session.get(items.get("href"))
+
+    search = re.search(rf"https://anikoto.cz/anime/getinfo/(\d+)", r.text)
+
+    return search.group(1)
 
 
 def search_anikoto(q: str):
@@ -25,6 +50,6 @@ def search_anikoto(q: str):
     response = requests.get(url, headers=headers)
     html = json.loads(response.text)["result"]["html"]
     soup = BeautifulSoup(html, "html.parser")
-    items = soup.find_all("a", class_="item")
+    item = soup.find("a", class_="item")
 
-    return items[0].get("href")
+    return item.get("href")
