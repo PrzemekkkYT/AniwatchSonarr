@@ -228,8 +228,6 @@ async def torznab_indexer(
         },
     )
 
-    counter = counter + 1
-
     # Atrybuty Torznab (ważne dla rozpoznania sezonu/odcinka)
     # Wymaga importu namespace, ale dla uproszczenia Sonarr czyta też z tytułu
 
