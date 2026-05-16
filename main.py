@@ -191,7 +191,7 @@ async def torznab_indexer(
 
     # print(f"Found {anikoto_url}")
 
-    anikoto_id = find_anikoto_id(q)
+    anikoto_id = find_anikoto_id(q or "")
 
     res = requests.get(f"https://anikotoapi.site/series/{anikoto_id}")
     anime_data = json.loads(res.text)
