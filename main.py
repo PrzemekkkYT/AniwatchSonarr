@@ -184,13 +184,6 @@ async def torznab_indexer(
     # 2. Obsługa wyszukiwania (Search)
     print(f"[*] Sonarr szuka: {q} Sezon: {season} Odcinek: {ep}")
 
-    # Tutaj docelowo wstawisz logikę przeszukiwania Aniwatch.
-    # Na razie zwrócimy jeden testowy wynik, żebyś widział go w Sonarrze.
-
-    # anikoto_url = search_anikoto(f"{q} season {season}")
-
-    # print(f"Found {anikoto_url}")
-
     if q:
         anikoto_id = find_anikoto_id(q)
 
@@ -202,6 +195,9 @@ async def torznab_indexer(
         )
 
         print(f"{anikoto_id} | {ep_url}")
+    else:
+        anikoto_id = 0
+        ep_url = "url"
 
     s_str = f"{season:02d}" if season is not None else "00"
     e_str = f"{ep:02d}" if ep is not None else "00"
@@ -216,10 +212,10 @@ async def torznab_indexer(
 
     # Teraz używamy bezpiecznych stringów
     ET.SubElement(item, "title").text = (
-        f"{title_query} - S{s_str}E{e_str} - {anikoto_id or '123'} - AniWatch"
+        f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
     )
-    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id or '123'}"
-    ET.SubElement(item, "link").text = ep_url or "url"
+    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id}"
+    ET.SubElement(item, "link").text = ep_url
 
     ET.SubElement(item, "pubDate").text = rfc_date
 
