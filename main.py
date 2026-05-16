@@ -213,7 +213,7 @@ async def torznab_indexer(
     ET.SubElement(item, "title").text = (
         f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
     )
-    ET.SubElement(item, "guid").text = f"test_guid_{counter}"
+    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id}"
     ET.SubElement(item, "link").text = ep_url
 
     ET.SubElement(item, "pubDate").text = rfc_date
