@@ -216,9 +216,9 @@ async def torznab_indexer(
 
     # Teraz używamy bezpiecznych stringów
     ET.SubElement(item, "title").text = (
-        f"{title_query} - S{s_str}E{e_str} - {anikoto_id or "123"} - AniWatch"
+        f"{title_query} - S{s_str}E{e_str} - {anikoto_id or '123'} - AniWatch"
     )
-    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id or "123"}"
+    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id or '123'}"
     ET.SubElement(item, "link").text = ep_url or "url"
 
     ET.SubElement(item, "pubDate").text = rfc_date
