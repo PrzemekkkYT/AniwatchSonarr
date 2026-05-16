@@ -27,4 +27,4 @@ def search_anikoto(q: str):
     soup = BeautifulSoup(html, "html.parser")
     items = soup.find_all("a", class_="item")
 
-    return items[0]
+    return items[0].get("href")
