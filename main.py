@@ -200,7 +200,8 @@ async def torznab_indexer(
     item = ET.SubElement(channel, "item")
 
     # Teraz używamy bezpiecznych stringów
-    ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
+    # ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
+    ET.SubElement(item, "title").text = f"{anikoto_url}"
     ET.SubElement(item, "guid").text = "test_guid_123"
     ET.SubElement(item, "link").text = anikoto_url
 
