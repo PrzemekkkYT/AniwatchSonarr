@@ -165,11 +165,14 @@ INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </caps>
 """
 
+counter = 0
+
 
 @app.get("/indexer/api")
 async def torznab_indexer(
     t: str = None, q: str = None, season: int = None, ep: int = None
 ):
+    global counter
     """
     To jest endpoint Indexera. Sonarr będzie tu wysyłał zapytania o odcinki.
     """
@@ -202,7 +205,7 @@ async def torznab_indexer(
     # Teraz używamy bezpiecznych stringów
     # ET.SubElement(item, "title").text = f"{title_query} - S{s_str}E{e_str} - AniWatch"
     ET.SubElement(item, "title").text = f"{anikoto_url}"
-    ET.SubElement(item, "guid").text = "test_guid_123"
+    ET.SubElement(item, "guid").text = f"test_guid_{counter}"
     ET.SubElement(item, "link").text = anikoto_url
 
     ET.SubElement(item, "pubDate").text = rfc_date
@@ -216,6 +219,8 @@ async def torznab_indexer(
             "type": "application/x-bittorrent",
         },
     )
+
+    counter = counter + 1
 
     # Atrybuty Torznab (ważne dla rozpoznania sezonu/odcinka)
     # Wymaga importu namespace, ale dla uproszczenia Sonarr czyta też z tytułu
