@@ -191,14 +191,17 @@ async def torznab_indexer(
 
     # print(f"Found {anikoto_url}")
 
-    anikoto_id = find_anikoto_id(q or "")
+    if q:
+        anikoto_id = find_anikoto_id(q)
 
-    res = requests.get(f"https://anikotoapi.site/series/{anikoto_id}")
-    anime_data = json.loads(res.text)
+        res = requests.get(f"https://anikotoapi.site/series/{anikoto_id}")
+        anime_data = json.loads(res.text)
 
-    ep_url = f'https://anikoto.cv/watch/{anime_data["data"]["anime"]["slug"]}/ep-{ep}'
+        ep_url = (
+            f'https://anikoto.cv/watch/{anime_data["data"]["anime"]["slug"]}/ep-{ep}'
+        )
 
-    print(f"{anikoto_id} | {ep_url}")
+        print(f"{anikoto_id} | {ep_url}")
 
     s_str = f"{season:02d}" if season is not None else "00"
     e_str = f"{ep:02d}" if ep is not None else "00"
@@ -213,10 +216,10 @@ async def torznab_indexer(
 
     # Teraz używamy bezpiecznych stringów
     ET.SubElement(item, "title").text = (
-        f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
+        f"{title_query} - S{s_str}E{e_str} - {anikoto_id or "123"} - AniWatch"
     )
-    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id}"
-    ET.SubElement(item, "link").text = ep_url
+    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id or "123"}"
+    ET.SubElement(item, "link").text = ep_url or "url"
 
     ET.SubElement(item, "pubDate").text = rfc_date
 
