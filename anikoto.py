@@ -28,6 +28,21 @@ def find_anikoto_id(q: str):
     return search.group(1)
 
 
+def get_anime_by_id(anikoto_id: str):
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "x-requested-with": "XMLHttpRequest",
+        }
+    )
+
+    url = f"https://anikotoapi.site/series/{anikoto_id}"
+
+    response = session.get(url)
+    return response.json().get("data", {})
+
+
 def search_anikoto(q: str):
     url = f"https://anikoto.cz/ajax/anime/search?keyword={q.replace(' ', '+')}"
 

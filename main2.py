@@ -1,157 +1,75 @@
-import asyncio
 import datetime
 import email
-import json
-from fastapi import FastAPI, Form, UploadFile, File, Response
-from fastapi.responses import PlainTextResponse
-import xml.etree.ElementTree as ET
 from typing import Optional
-import uuid
-import time
+from fastapi import FastAPI, Form, Response
+from fastapi.responses import PlainTextResponse
+import urllib
+from anikoto import find_anikoto_id, get_anime_by_id
+from orm import TorrentTask, init_db
 
-import requests
-
-from anikoto import find_anikoto_id, search_anikoto, get_anime_by_id
+import xml.etree.ElementTree as ET
 
 app = FastAPI()
+init_db()
 
 GB = 1024 * 1024 * 1024
-
-# Prosta baza danych w pamięci (w produkcji użyj SQLite/JSON)
-downloads = {}
-
-
-async def test(task_id: str):
-    while True:
-        # If the task was removed, exit the worker
-        if task_id not in downloads:
-            break
-
-        # Safely increment progress and cap at 1.0
-        downloads[task_id]["progress"] = min(
-            1.0, downloads[task_id].get("progress", 0) + 0.01
-        )
-
-        # Properly yield to the event loop
-        await asyncio.sleep(1)
-
-        # When complete, mark finished and set timestamps/status
-        if downloads[task_id]["progress"] >= 1.0:
-            downloads[task_id]["progress"] = 1.0
-            downloads[task_id]["status"] = "completed"
-            downloads[task_id]["added_on"] = downloads[task_id].get(
-                "added_on", int(time.time())
-            )
-            break
 
 
 @app.post("/api/v2/auth/login", response_class=PlainTextResponse)
 async def login(response: Response):
-    # Ustawiamy ciasteczko sesji, którego szuka Sonarr
     response.set_cookie(key="SID", value="fake-cookie-12345")
-    # Zwracamy czysty tekst "Ok." (dokładnie tak robi qBittorrent)
     return "Ok."
 
 
 @app.get("/api/v2/app/webapiVersion", response_class=PlainTextResponse)
 async def web_api_version():
-    # Zwracamy czysty tekst bez JSON-owych cudzysłowów
     return "2.8.2"
-
-
-import urllib.parse
 
 
 @app.post("/api/v2/torrents/add")
 async def add_torrent(urls: str = Form(...)):
-    # urls będzie wyglądać tak: magnet:?xt=urn:btih:...&dn=https://aniwatch.to/...
-
     parsed_url = urllib.parse.urlparse(urls)
     params = urllib.parse.parse_qs(parsed_url.query)
 
-    payload = params["dn"][
-        0
-    ]  # Dostajemy: "Nazwa - S01E05 - 1080p - WEBDL|||https://aniwatch..."
-
-    # anikoto_id = params["dn"][0]  # Teraz dostajemy tylko ID z Anikoto
-
+    payload = params["dn"][0]
     torrent_name, anikoto_id = payload.split("|||")
 
-    anime_data = get_anime_by_id(anikoto_id).get(
-        "anime", {}
-    )  # Możesz tu pobrać więcej danych o anime, jeśli chcesz
+    name, season_episode, _, _ = torrent_name.split(" - ")
+
+    season, episode = season_episode.replace("S", "").split("E")
+
+    anime_data = get_anime_by_id(anikoto_id).get("anime", {})
 
     slug = anime_data.get("slug", "unknown")
-    anime_url = f"https://anikoto.cz/watch/{slug}"
+    episode_url = f"https://anikoto.cz/watch/{slug}/ep-{episode}"
 
-    # sonarr_name = f"{anime_name} - {torrent_name}"
+    task = TorrentTask.create(
+        hash=str(hash(episode_url)),
+        name=torrent_name,
+        source_url=episode_url,
+        anime_id=anikoto_id,
+        episode_num=int(episode),
+        season_num=int(season),
+    )
 
-    # Rozdzielamy nazwę od linku
-    # torrent_name, actual_url = payload.split("|||")
-
-    task_id = str(hash(anime_url))
-    downloads[task_id] = {
-        "name": torrent_name,  # BINGO! Sonarr ma idealną nazwę, kolumny Episode i Formats ożyją!
-        "progress": 0.3,
-        "status": "downloading",
-        "save_path": "/downloads",
-        "size": 4 * GB,
-    }
-
-    # asyncio.create_task(download_worker(actual_url, task_id))
-    asyncio.create_task(test(task_id))
     return Response(content="Ok.", media_type="text/plain")
 
 
 @app.get("/api/v2/torrents/info")
 async def torrents_info(category: Optional[str] = None):
-    """
-    Sonarr pyta o listę pobieranych rzeczy, często filtrując po kategorii.
-    Nawet jeśli lista jest pusta, musimy zwrócić poprawną strukturę JSON [].
-    """
-    formatted_list = []
-
-    for tid, data in downloads.items():
-        # Opcjonalnie: filtrujemy po kategorii, jeśli Sonarr o to prosi
-        if category and category != data.get("category", category):
-            continue
-
-        formatted_list.append(
-            {
-                "hash": str(tid),  # Hash musi być ciągiem znaków (string)
-                "name": str(data["name"]),
-                "size": int(data["size"]) if "size" in data else "0",
-                "progress": float(data["progress"]),  # Wartość 0.0 - 1.0
-                "status": str(data["status"]),
-                "save_path": str(data["save_path"]),
-                "added_on": int(data["added_on"]) if "added_on" in data else "0",
-                "upspeed": 0,
-                "dlspeed": 1024 * 1024,
-                "category": data.get(
-                    "category", "tv-sonarr"
-                ),  # Sonarr lubi widzieć tu kategorię
-            }
-        )
-
-    # FastAPI automatycznie zamieni pustą listę [] na poprawny JSON array
-    return formatted_list
+    return list(TorrentTask.select().where(TorrentTask.state == "downloading").dicts())
 
 
 @app.post("/api/v2/torrents/delete")
 async def delete_torrent(hashes: str = Form(...)):
-    """Wywoływane, gdy Sonarr usuwa zadanie z listy."""
-    for h in hashes.split("|"):
-        if h in downloads:
-            del downloads[h]
-    return "Ok."
+    hash_list = hashes.split("|")
+
+    TorrentTask.delete().where(TorrentTask.hash.in_(hash_list)).execute()
+    return Response(content="Ok.", media_type="text/plain")
 
 
 @app.get("/api/v2/app/preferences")
 async def get_preferences():
-    """
-    Sonarr pyta o preferencje klienta (np. globalne limity, ścieżki).
-    Zwracamy podstawowy zestaw konfiguracji, aby przeszedł test.
-    """
     return {
         "save_path": "/downloads",
         "scan_dirs": [],
@@ -171,11 +89,6 @@ async def get_preferences():
 
 @app.get("/api/v2/torrents/categories")
 async def get_categories():
-    """
-    Sonarr sprawdza dostępne kategorie w kliencie.
-    Zwracamy pusty słownik – Sonarr sam spróbuje dodać swoją kategorię
-    (np. "tv-sonarr"), jeśli będzie jej potrzebował.
-    """
     return {}
 
 
@@ -184,10 +97,6 @@ async def create_category(
     category: str = Form(...),
     savePath: str = Form(""),  # Sonarr może (ale nie musi) to wysłać
 ):
-    """
-    Wywoływane przez Sonarra, gdy próbuje utworzyć dedykowaną kategorię.
-    Zwracamy "Ok.", aby Sonarr myślał, że kategoria została zapisana.
-    """
     print(f"[*] Sonarr utworzył kategorię: {category} ze ścieżką: {savePath}")
     return "Ok."
 
@@ -302,4 +211,4 @@ if __name__ == "__main__":
     import uvicorn
 
     # Uruchom serwer z autoreloadem (debug), używając nazwy modułu aby reloader działał poprawnie
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True, log_level="debug")
+    uvicorn.run("main2:app", host="0.0.0.0", port=8080, reload=True, log_level="debug")
