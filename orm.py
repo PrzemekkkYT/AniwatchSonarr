@@ -21,33 +21,25 @@ db = SqliteDatabase(
 
 
 class TorrentTask(Model):
-    # --- Pola wymagane przez Sonarra / qBittorrent ---
-    hash = CharField(unique=True, primary_key=True)  # Unikalny identyfikator zadania
-    name = CharField()  # Pełna nazwa (np. "Anime - S01E05 - 1080p")
-    size = IntegerField(default=0)  # Całkowity rozmiar pliku w bajtach
-    amount_left = IntegerField(default=0)  # Ile bajtów zostało do końca
-    progress = FloatField(default=0.0)  # Postęp pobierania (0.0 do 1.0)
-    dlspeed = IntegerField(default=0)  # Prędkość pobierania w bajtach/s
-    eta = IntegerField(default=0)  # Czas do końca w sekundach
-    state = CharField(
-        default="downloading"
-    )  # Status: downloading, completed, error, pausedDL
-    save_path = CharField(default="/downloads")  # Gdzie Sonarr ma szukać gotowego pliku
-    category = CharField(default="tv-sonarr")  # Kategoria z Sonarra
-    added_on = IntegerField(
-        default=lambda: int(time.time())
-    )  # Znacznik czasu Unix dodania
+    hash = CharField(unique=True, primary_key=True)
+    title = CharField()
+    name = CharField()
+    anime_id = IntegerField()
+    source_url = CharField()
+    episode_embed_id = IntegerField()
+    episode_num = IntegerField(default=0)
+    season_num = IntegerField(default=0)
+    size = IntegerField(default=0)
+    amount_left = IntegerField(default=0)
+    progress = FloatField(default=0.0)
+    dlspeed = IntegerField(default=0)
+    eta = IntegerField(default=0)
+    state = CharField(default="downloading")
+    save_path = CharField(default="/downloads")
+    category = CharField(default="tv-sonarr")
+    added_on = IntegerField(default=lambda: int(time.time()))
 
-    # --- Przydatne pola dodatkowe (Rozbudowa) ---
-    source_url = CharField()  # Stały link do podstrony odcinka (np. na Anikoto)
-    anime_id = IntegerField(
-        null=True
-    )  # ID anime z Twojego parsera (przydatne do logów)
-    episode_num = IntegerField(
-        null=True
-    )  # Sam numer odcinka (np. 5) jako czysta liczba
-    season_num = IntegerField(null=True)  # Numer sezonu (np. 1) jako czysta liczba
-    error_message = CharField(null=True)  # Tu wpiszesz powód, jeśli yt-dlp się wyłoży
+    error_message = CharField(null=True)
 
     class Meta:
         database = db

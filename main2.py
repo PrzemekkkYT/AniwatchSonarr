@@ -1,11 +1,20 @@
+import asyncio
 import datetime
 import email
+import html
+import re
+from sqlite3 import OperationalError
+import time
 from typing import Optional
 from fastapi import FastAPI, Form, Response
 from fastapi.responses import PlainTextResponse
 import urllib
+
+import requests
+import yt_dlp
 from anikoto import find_anikoto_id, get_anime_by_id
 from orm import TorrentTask, init_db
+from headers import random_user_agent
 
 import xml.etree.ElementTree as ET
 
@@ -13,6 +22,148 @@ app = FastAPI()
 init_db()
 
 GB = 1024 * 1024 * 1024
+
+
+def get_source(episode_embed_id: str | int):
+    session = requests.Session()
+    session.headers.update(
+        {
+            "User-Agent": random_user_agent(),
+            "x-requested-with": "XMLHttpRequest",
+            "referer": "https://megaplay.buzz",
+        }
+    )
+
+    print("1")
+    r_embed = session.get(f"https://megaplay.buzz/stream/s-2/{episode_embed_id}/sub")
+    print("2")
+
+    id_ = re.search(r" data-id=\"(\d+)\"", r_embed.text).group(1)
+
+    print("3")
+    r = session.get("https://megaplay.buzz/stream/getSources", params={"id": id_})
+    print("4")
+    r_data = r.json()
+
+    if "sources" in r_data:
+        return r_data.get("sources", {}).get("file", "")
+
+    return None
+
+
+LAST_DB_WRITE_TIME = 0.0
+
+
+async def download_episode(task: TorrentTask):
+
+    def progress_hook(d, task_hash: str):
+        global LAST_DB_WRITE_TIME
+        status = d.get("status")
+
+        if status == "downloading":
+            now = time.time()
+
+            # Ograniczenie zapisu: wykonaj update tylko, jeśli minęła minimum 1 sekunda
+            if now - LAST_DB_WRITE_TIME >= 1.0:
+                # Bezpieczne wyciąganie rozmiaru pliku (dla m3u8 total_bytes często to None)
+                total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                downloaded_bytes = d.get("downloaded_bytes", 0)
+
+                # Obliczanie postępu i brakujących bajtów
+                progress = (
+                    float(downloaded_bytes / total_bytes) if total_bytes > 0 else 0.0
+                )
+                amount_left = total_bytes - downloaded_bytes
+
+                # Wyciąganie prędkości i czasu do końca
+                dlspeed = int(d.get("speed") or 0)
+                eta = int(d.get("eta") or 0)
+
+                try:
+                    # Szybki update w bazie SQLite
+                    TorrentTask.update(
+                        progress=progress,
+                        size=total_bytes,
+                        amount_left=amount_left,
+                        dlspeed=dlspeed,
+                        eta=eta,
+                        state="downloading",
+                    ).where(TorrentTask.hash == task_hash).execute()
+
+                    # Aktualizacja czasu ostatniego zapisu po udanej operacji
+                    LAST_DB_WRITE_TIME = now
+
+                except OperationalError:
+                    # Jeśli baza była akurat zablokowana przez zapytanie info z Sonarra,
+                    # ignorujemy to – kolejny hook za ułamek sekundy ponowi próbę.
+                    pass
+
+        elif status == "finished":
+            # Status FINISHED musi zapisać się bezwarunkowo, bo to sygnał dla Sonarra
+            attempts = 3
+            while attempts > 0:
+                try:
+                    TorrentTask.update(
+                        progress=1.0,
+                        amount_left=0,
+                        dlspeed=0,
+                        eta=0,
+                        state="completed",  # Zielone światło dla Sonarra do importu
+                    ).where(TorrentTask.hash == task_hash).execute()
+                    break  # Udany zapis, przerywamy pętlę retry
+                except OperationalError:
+                    attempts -= 1
+                    time.sleep(0.2)  # Krótki odpoczynek przed ponowną próbą zapisu
+
+        elif status == "error":
+            # Przechwytywanie błędów z yt-dlp
+            error_msg = str(d.get("error", "Nienazwany błąd yt-dlp"))
+            try:
+                TorrentTask.update(state="error", error_message=error_msg).where(
+                    TorrentTask.hash == task_hash
+                ).execute()
+            except OperationalError:
+                pass
+
+    ydl_opts = {
+        "http_headers": {
+            "referer": "https://megaplay.buzz/",
+            "origin": "https://megaplay.buzz/",
+            "user-agent": random_user_agent(),
+            "priority": "u=1, i",
+            "accept": "*/*",
+        },
+        # "concurrent_fragment_downloads": 10,
+        "hls_prefer_native": {"m3u8": "native", "dash": "native"},
+        "nocheckcertificate": True,
+        "ignoreerrors": True,
+        "quiet": True,
+        # "noprogress": True,
+        "no_warnings": True,
+        "fixup": "detect_or_warn",
+        "progress_hooks": [lambda d: progress_hook(d, task.hash)],
+        "paths": {"temp": "temp", "home": f"{task.save_path}/{task.anime_id}"},
+        "outtmpl": f"{task.title} S{task.season_num}E{task.episode_num}.%(ext)s",
+        "generic": {
+            "impersonate": "Edge",
+        },
+    }
+
+    def run_yt_dlp():
+        # Pobieramy źródło i odpalamy yt-dlp w synchronicznym bloku
+        source_url = get_source(task.episode_embed_id)
+        if source_url:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([source_url])
+        else:
+            # Zmień status zadania na error, jeśli nie udało się wyciągnąć m3u8
+            TorrentTask.update(
+                state="error", error_message="Nie udało się pobrać linku m3u8"
+            ).where(TorrentTask.hash == task.hash).execute()
+
+    # Uruchamiamy cały proces w osobnym wątku, pętla FastAPI jest wolna!
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, run_yt_dlp)
 
 
 @app.post("/api/v2/auth/login", response_class=PlainTextResponse)
@@ -34,23 +185,53 @@ async def add_torrent(urls: str = Form(...)):
     payload = params["dn"][0]
     torrent_name, anikoto_id = payload.split("|||")
 
-    name, season_episode, _, _ = torrent_name.split(" - ")
+    match = re.search(r"^(.*?)\s*-\s*S(\d+)E(\d+)", torrent_name)
 
-    season, episode = season_episode.replace("S", "").split("E")
+    if match:
+        name = match.group(1).strip()  # Wyciągnie: "Kaguya-sama - Love is War"
+        season = match.group(2)  # Wyciągnie: "01"
+        episode = match.group(3)  # Wyciągnie: "05"
+    else:
+        # Zabezpieczenie awaryjne, gdyby format był zupełnie inny
+        name = torrent_name
+        season, episode = "1", "1"
 
-    anime_data = get_anime_by_id(anikoto_id).get("anime", {})
+    # season, episode = season_episode.replace("S", "").split("E")
+
+    found_anime = get_anime_by_id(anikoto_id)
+
+    anime_data = found_anime.get("anime", {})
+
+    episodes = found_anime.get("episodes", []) or []
+    embed_id = next(
+        (
+            ep.get("episode_embed_id")
+            for ep in episodes
+            if ep.get("number") == int(episode)
+        ),
+        None,
+    )
 
     slug = anime_data.get("slug", "unknown")
     episode_url = f"https://anikoto.cz/watch/{slug}/ep-{episode}"
 
-    task = TorrentTask.create(
+    task, created = TorrentTask.get_or_create(
         hash=str(hash(episode_url)),
+        title=html.unescape(anime_data.get("title", name)),
         name=torrent_name,
         source_url=episode_url,
         anime_id=anikoto_id,
+        episode_embed_id=embed_id,
         episode_num=int(episode),
         season_num=int(season),
+        # save_path="./downloads",
     )
+
+    print(type(task))
+    print(task)
+    print(task.source_url)
+
+    asyncio.create_task(download_episode(task))
 
     return Response(content="Ok.", media_type="text/plain")
 

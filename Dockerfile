@@ -8,4 +8,4 @@ COPY . .
 # Port dla Twojego API
 EXPOSE 8080
 
-CMD ["python", "main.py"]
+CMD ["python", "main2.py"]
