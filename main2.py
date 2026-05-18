@@ -215,16 +215,18 @@ async def add_torrent(urls: str = Form(...)):
     slug = anime_data.get("slug", "unknown")
     episode_url = f"https://anikoto.cz/watch/{slug}/ep-{episode}"
 
+    title = html.unescape(anime_data.get("title", name))
+
     task, created = TorrentTask.get_or_create(
         hash=str(hash(episode_url)),
-        title=html.unescape(anime_data.get("title", name)),
-        name=torrent_name,
+        title=title,
+        name=f"{title} S{season}E{episode}.mp4",
         source_url=episode_url,
         anime_id=anikoto_id,
         episode_embed_id=embed_id,
         episode_num=int(episode),
         season_num=int(season),
-        # save_path="./downloads",
+        save_path=f"/downloads/{anikoto_id}",
     )
 
     print(type(task))
