@@ -143,7 +143,7 @@ async def download_episode(task: TorrentTask):
         "fixup": "detect_or_warn",
         "progress_hooks": [lambda d: progress_hook(d, task.hash)],
         "paths": {"temp": "temp", "home": task.save_path},
-        "outtmpl": f"{task.title} S{task.season_num}E{task.episode_num}.%(ext)s",
+        "outtmpl": f"{task.name}.%(ext)s",
         "generic": {
             "impersonate": "Edge",
         },
@@ -220,7 +220,8 @@ async def add_torrent(urls: str = Form(...)):
     task, created = TorrentTask.get_or_create(
         hash=str(hash(episode_url)),
         title=title,
-        name=f"{title} S{season}E{episode}.mp4",
+        # name=f"{title} S{season}E{episode}.mp4",
+        name=f"{torrent_name}.mp4",
         source_url=episode_url,
         anime_id=anikoto_id,
         episode_embed_id=embed_id,
