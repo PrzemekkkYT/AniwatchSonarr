@@ -275,6 +275,8 @@ async def add_torrent(urls: str = Form(...)):
 
     valid_embeds = [e for e in embeds if e.get("embed_id") is not None]
 
+    print(valid_embeds)
+
     slug = anime_data.get("slug", "unknown")
 
     title = html.unescape(anime_data.get("title", name))
