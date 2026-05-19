@@ -367,9 +367,10 @@ async def torznab_indexer(
     ET.SubElement(channel, "title").text = "Aniwatch Torznab"
 
     item = ET.SubElement(channel, "item")
-    ET.SubElement(item, "title").text = (
-        f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
-    )
+    ET.SubElement(item, "title").text = clean_name
+    # ET.SubElement(item, "title").text = (
+    #     f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
+    # )
     ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id}"
     ET.SubElement(item, "link").text = ep_url
     ET.SubElement(item, "pubDate").text = rfc_date
