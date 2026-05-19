@@ -288,6 +288,27 @@ async def create_category(
     return "Ok."
 
 
+@app.get("/api/v2/torrents/files")
+async def torrents_files(hash: str):
+    task: TorrentTask | None = TorrentTask.get_or_none(TorrentTask.hash == hash)
+
+    if not task:
+        return Response(content="[]", media_type="application/json", status_code=404)
+
+    files_list = [
+        {
+            "index": 0,
+            "name": task.name,  # Wyjdzie np.: "123/Regardless of My...mp4"
+            "size": task.size,
+            "progress": task.progress,
+            "priority": 1,
+            "is_seed": True,
+        }
+    ]
+
+    return files_list
+
+
 # INDEXER
 INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <caps>
