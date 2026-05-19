@@ -138,8 +138,9 @@ async def download_episode(task: TorrentTask):
         "nocheckcertificate": True,
         "ignoreerrors": True,
         "quiet": True,
-        # "noprogress": True,
+        "noprogress": False,
         "no_warnings": True,
+        "logger": None,
         "fixup": "detect_or_warn",
         "progress_hooks": [lambda d: progress_hook(d, task.hash)],
         "paths": {"temp": "temp", "home": task.save_path},
@@ -241,7 +242,7 @@ async def add_torrent(urls: str = Form(...)):
 
 @app.get("/api/v2/torrents/info")
 async def torrents_info(category: Optional[str] = None):
-    info = list(TorrentTask.select().where(TorrentTask.state == "downloading").dicts())
+    info = list(TorrentTask.select().dicts())
     print(info)
     return info
 
