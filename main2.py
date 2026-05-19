@@ -133,7 +133,7 @@ async def download_episode(task: TorrentTask):
             "priority": "u=1, i",
             "accept": "*/*",
         },
-        # "concurrent_fragment_downloads": 10,
+        "concurrent_fragment_downloads": 10,
         "hls_prefer_native": {"m3u8": "native", "dash": "native"},
         "nocheckcertificate": True,
         "ignoreerrors": True,
