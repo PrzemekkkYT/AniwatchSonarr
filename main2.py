@@ -265,6 +265,75 @@ async def delete_torrent(hashes: str = Form(...)):
     return Response(content="Ok.", media_type="text/plain")
 
 
+import os
+import shutil
+from fastapi import Form, Response, status
+from peewee import OperationalError
+
+
+@app.post("/api/v2/torrents/delete")
+async def delete_torrent(hashes: str = Form(...), deleteFiles: str = Form("false")):
+    # Sonarr może przysłać kilka hashów połączonych znakiem | (np. "hash1|hash2")
+    hash_list = hashes.split("|")
+
+    # Konwersja tekstowego "true"/"false" z formularza na Boolean Pythona
+    should_delete_files = deleteFiles.lower() == "true"
+
+    print(
+        f"[*] Otrzymano żądanie usunięcia dla hashów: {hash_list} (Czyszczenie plików: {should_delete_files})"
+    )
+
+    for task_hash in hash_list:
+        try:
+            # 1. Pobieramy zadanie z bazy, żeby znać ścieżki i nazwę pliku
+            task: TorrentTask | None = TorrentTask.get_or_none(
+                TorrentTask.hash == task_hash
+            )
+
+            if not task:
+                print(f"[!] Nie znaleziono zadania o hashu {task_hash} w bazie danych.")
+                continue
+
+            if should_delete_files:
+                # Odtwarzamy dokładną ścieżkę do folderu odcinka: /downloads/{anime_id}
+                anime_folder_path = task.save_path
+                # Dokładna ścieżka do pliku wideo: /downloads/{anime_id}/{task.name}
+                file_path = os.path.join(anime_folder_path, task.name)
+
+                # Usuwamy fizyczny plik wideo, jeśli istnieje
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"[*] Pomyślnie usunięto plik wideo: {file_path}")
+
+                # [OPCJONALNIE] Jeśli folder anime_id jest teraz pusty, sprzątamy go
+                if os.path.exists(anime_folder_path) and not os.listdir(
+                    anime_folder_path
+                ):
+                    os.rmdir(anime_folder_path)
+                    print(f"[*] Usunięto pusty katalog serii: {anime_folder_path}")
+
+            # 2. Usuwamy wpis z bazy SQLite za pomocą Peewee
+            attempts = 3
+            while attempts > 0:
+                try:
+                    task.delete_instance()
+                    print(f"[*] Usunięto wpis zadania {task_hash} z bazy danych.")
+                    break
+                except OperationalError:
+                    attempts -= 1
+                    import time
+
+                    time.sleep(0.2)
+
+        except Exception as e:
+            print(f"[!] Krytyczny błąd podczas usuwania zadania {task_hash}: {e}")
+
+    # Sonarr oczekuje prostego tekstowego "Ok." lub pustej odpowiedzi z kodem 200
+    return Response(
+        content="Ok.", media_type="text/plain", status_code=status.HTTP_200_OK
+    )
+
+
 @app.get("/api/v2/app/preferences")
 async def get_preferences():
     return {
