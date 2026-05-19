@@ -240,7 +240,9 @@ async def add_torrent(urls: str = Form(...)):
 
 @app.get("/api/v2/torrents/info")
 async def torrents_info(category: Optional[str] = None):
-    return list(TorrentTask.select().where(TorrentTask.state == "downloading").dicts())
+    info = list(TorrentTask.select().where(TorrentTask.state == "downloading").dicts())
+    print(info)
+    return info
 
 
 @app.post("/api/v2/torrents/delete")
