@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import email
 import html
+import os
 import re
 from sqlite3 import OperationalError
 import time
@@ -195,7 +196,7 @@ async def add_torrent(urls: str = Form(...)):
     else:
         # Zabezpieczenie awaryjne, gdyby format był zupełnie inny
         name = torrent_name
-        season, episode = "1", "1"
+        season, episode = "0", "0"
 
     # season, episode = season_episode.replace("S", "").split("E")
 
@@ -251,7 +252,16 @@ async def torrents_info(category: Optional[str] = None):
 async def delete_torrent(hashes: str = Form(...)):
     hash_list = hashes.split("|")
 
-    TorrentTask.delete().where(TorrentTask.hash.in_(hash_list)).execute()
+    for hash in hash_list:
+        task: TorrentTask | None = TorrentTask.get_or_none(TorrentTask.hash == hash)
+        hash_path = f"{task.save_path}/{task.name}"
+
+        if os.path.exists(hash_path):
+            os.remove(hash_path)
+        if task is not None:
+            TorrentTask.delete().where(TorrentTask.hash == hash).execute()
+
+    # TorrentTask.delete().where(TorrentTask.hash.in_(hash_list)).execute()
     return Response(content="Ok.", media_type="text/plain")
 
 
