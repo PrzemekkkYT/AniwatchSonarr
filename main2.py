@@ -273,11 +273,13 @@ async def add_torrent(urls: str = Form(...)):
             for ep in episodes
         ]
 
+    valid_embeds = [e for e in embeds if e.get("embed_id") is not None]
+
     slug = anime_data.get("slug", "unknown")
 
     title = html.unescape(anime_data.get("title", name))
 
-    for embed in embeds:
+    for embed in valid_embeds:
         episode_url = f"https://anikoto.cz/watch/{slug}/ep-{embed['episode']}"
 
         print(episode_url)
@@ -287,18 +289,32 @@ async def add_torrent(urls: str = Form(...)):
             f"{name} - S{int(season):02d}E{embed['episode']:02d} - 1080p - WEBDL.mp4"
         )
 
+        ep_num = embed["episode"]
+
+        existing_task = TorrentTask.get_or_none(TorrentTask.hash == task_hash)
+        if existing_task:
+            print(
+                f"[-] Pomijam odcinek {ep_num} - istnieje już w bazie ze statusem: {existing_task.state}"
+            )
+            continue
+
+        print(f"[*] Dodawanie NOWEGO zadania do bazy: {clean_episode_name}")
+
+        # --- KROK 2: BEZPIECZNY GET_OR_CREATE ---
+        # Szukamy TYLKO po hashu. Jeśli nie znajdzie, tworzy rekord z danymi z 'defaults'
         task, created = TorrentTask.get_or_create(
             hash=task_hash,
-            title=title,
-            # name=f"{torrent_name}.mp4",
-            name=clean_episode_name,
-            source_url=episode_url,
-            anime_id=anikoto_id,
-            episode_embed_id=embed["embed_id"],
-            episode_num=embed["episode"],
-            season_num=int(season),
-            save_path=f"/downloads/{anikoto_id}",
-            state="queued",
+            defaults={
+                "title": title,
+                "name": clean_episode_name,
+                "source_url": episode_url,
+                "anime_id": anikoto_id,
+                "episode_embed_id": embed["embed_id"],
+                "episode_num": ep_num,
+                "season_num": int(season),
+                "save_path": f"/downloads/{anikoto_id}",
+                "state": "queued",
+            },
         )
 
     asyncio.create_task(manage_queue())
