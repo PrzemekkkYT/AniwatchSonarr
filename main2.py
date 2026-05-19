@@ -226,6 +226,7 @@ async def add_torrent(urls: str = Form(...)):
     single_ep = single_ep.lower() == "true"
 
     # 1. Próbujemy dopasować format pojedynczego odcinka: S01E05
+    # 1. Próbujemy dopasować format pojedynczego odcinka: S01E05
     match_ep = re.search(r"^(.*?)\s*-\s*S(\d+)E(\d+)", torrent_name)
 
     # 2. Próbujemy dopasować format całego sezonu: Season 01
@@ -283,7 +284,7 @@ async def add_torrent(urls: str = Form(...)):
 
         task_hash = hashlib.md5(episode_url.encode("utf-8")).hexdigest()
         clean_episode_name = (
-            f"{title} - S{int(season):02d}E{embed['episode']:02d} - 1080p - WEBDL.mp4"
+            f"{name} - S{int(season):02d}E{embed['episode']:02d} - 1080p - WEBDL.mp4"
         )
 
         task, created = TorrentTask.get_or_create(
