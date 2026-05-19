@@ -143,7 +143,7 @@ async def download_episode(task: TorrentTask):
         "fixup": "detect_or_warn",
         "progress_hooks": [lambda d: progress_hook(d, task.hash)],
         "paths": {"temp": "temp", "home": task.save_path},
-        "outtmpl": f"{task.name}.%(ext)s",
+        "outtmpl": f"{task.name[:-4]}.%(ext)s",
         "generic": {
             "impersonate": "Edge",
         },
