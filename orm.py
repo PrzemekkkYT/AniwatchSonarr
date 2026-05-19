@@ -3,7 +3,8 @@ import time
 from peewee import SqliteDatabase, Model, CharField, IntegerField, FloatField
 
 # Ścieżka do bazy danych - upewnij się, że ten katalog jest zmapowany w TrueNAS
-DATABASE_PATH = "/app/db/downloads.db"
+# DATABASE_PATH = "/app/db/downloads.db"
+DATABASE_PATH = "./downloads.db"
 
 # Tworzymy katalog, jeśli nie istnieje
 os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)

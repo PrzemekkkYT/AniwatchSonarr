@@ -19,13 +19,37 @@ def find_anikoto_id(q: str):
 
     html = json.loads(ru.text)["result"]["html"]
     soup = BeautifulSoup(html, "html.parser")
-    items = soup.find("a", class_="item")
 
-    r = session.get(items.get("href"))
+    items = soup.find_all("a", class_="item")
 
-    search = re.search(rf"https://anikoto.cz/anime/getinfo/(\d+)", r.text)
+    animes = []
 
-    return search.group(1)
+    for item in items:
+        r = session.get(item.get("href"))
+
+        search = re.search(rf"https://anikoto.cz/anime/getinfo/(\d+)", r.text)
+
+        match = re.search(r"<div>Episodes:\s*<span>\s*(\d+)", r.text)
+
+        if match:
+            # Wyciągamy zawartość pierwszej grupy i konwertujemy na int
+            episodes_count = int(match.group(1))
+            print(f"[+] Znaleziono liczbę odcinków: {episodes_count}")
+        else:
+            episodes_count = (
+                12  # Bezpieczny fallback, gdyby struktura HTML się zmieniła
+            )
+            print("[!] Nie udało się dopasować regexa, używam fallbacku: 12")
+
+        animes.append(
+            {
+                "id": search.group(1),
+                "title": item.find("div", class_="name").text,
+                "episodes": episodes_count,
+            }
+        )
+
+    return animes
 
 
 def get_anime_by_id(anikoto_id: str):

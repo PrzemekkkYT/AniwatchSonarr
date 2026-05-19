@@ -518,6 +518,14 @@ INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+import email.utils
+import datetime
+import urllib.parse
+import xml.etree.ElementTree as ET
+from typing import Optional
+from fastapi import Response
+
+
 @app.get("/indexer/api")
 async def torznab_indexer(
     t: str = None,
@@ -531,64 +539,136 @@ async def torznab_indexer(
 
     chosen_cat = "5070"
 
-    # Przygotowanie sezonu/odcinka
-    s_str = (
-        f"{season:02d}" if season is not None else "01"
-    )  # Zmień na 01, Sonarr woli realne numery
+    # Przygotowanie stringów dla sezonu i odcinka
+    s_str = f"{season:02d}" if season is not None else "01"
     e_str = f"{ep:02d}" if ep is not None else "00"
 
     print(f"[*] Sonarr szuka: {q} Sezon: {season} Odcinek: {ep} Cat filter: {cat}")
 
-    # Logika scrapowania API Anikoto
+    # 1. Logika pobierania listy dopasowanych serii z Anikoto
+    matched_anime_list = []
     if q is not None:
         try:
-            anikoto_id = find_anikoto_id(q)
+            # Zakładamy, że ta funkcja zwraca teraz listę, np.: [{"id": 123, "title": "Nazwa"}, ...]
+            matched_anime_list = find_anikoto_id(q) or []
         except Exception as e:
-            print(f"[!] Błąd pobierania danych z API Anikoto: {e}")
-            anikoto_id = 0
-    else:
-        anikoto_id = 0
+            print(f"[!] Błąd pobierania danych z API Anikoto dla frazy '{q}': {e}")
 
-    if ep is not None:
-        clean_name = f"{q} - S{s_str}E{e_str} - 1080p - WEBDL"
-    else:
-        clean_name = f"{q} - Season {s_str} - 1080p - WEBDL"
+    # Zabezpieczenie awaryjne: jeśli nic nie znaleziono, tworzymy jeden pusty wpis, żeby nie wywalić XML-a
+    if not matched_anime_list:
+        matched_anime_list = [{"id": 0, "title": q or "Unknown"}]
 
-    payload = f"{clean_name}|||{anikoto_id}|||{'true' if ep is not None else 'false'}"
-
-    encoded_payload = urllib.parse.quote(payload)
-
-    ep_url = f"magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn={encoded_payload}&tr=http://a.b"
-
-    now = datetime.datetime.now()
-    rfc_date = email.utils.format_datetime(now)
-
+    # Inicjalizacja dokumentu XML Torznab
     ET.register_namespace("torznab", "http://torznab.com/schemas/2015/feed")
-
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     ET.SubElement(channel, "title").text = "Aniwatch Torznab"
 
-    item = ET.SubElement(channel, "item")
-    ET.SubElement(item, "title").text = clean_name
-    ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id}"
-    ET.SubElement(item, "link").text = ep_url
-    ET.SubElement(item, "pubDate").text = rfc_date
-    ET.SubElement(item, "description").text = f"Episode S{s_str}E{e_str} - AniWatch"
+    now = datetime.datetime.now()
+    rfc_date = email.utils.format_datetime(now)
 
-    ET.SubElement(item, "category").text = chosen_cat
-    ET.SubElement(
-        item,
-        "{http://torznab.com/schemas/2015/feed}attr",
-        {"name": "category", "value": chosen_cat},
-    )
+    # 2. PĘTLA GENERUJĄCA WYNIKI (Dla każdego dopasowanego anime z Anikoto)
+    for anime in matched_anime_list:
+        anikoto_id = anime.get("id", 0)
+        # Używamy oryginalnego tytułu z Anikoto, dzięki czemu Sonarr lepiej dopasuje serie
+        anime_title = anime.get("title", q)
 
-    ET.SubElement(
-        item,
-        "enclosure",
-        {"url": ep_url, "length": "0", "type": "application/x-bittorrent"},
-    )
+        # Generujemy listę wydań dla tego konkretnego anime, które przekażemy Sonarrowi
+        releases_to_generate = []
 
+        if ep is not None:
+            # Sytuacja A: Sonarr pyta o konkretny odcinek (np. S04E25)
+            # Opcja 1: Sam pojedynczy odcinek
+            releases_to_generate.append(
+                {
+                    "clean_name": f"{anime_title} - S{s_str}E{e_str} - 1080p - WEBDL",
+                    "is_single": "true",
+                    "desc": f"Episode S{s_str}E{e_str} - AniWatch",
+                }
+            )
+            # Opcja 2: Cały sezon (Bonus! Sonarr przetworzy to i jeśli będzie chciał, zassie cały sezon na raz)
+            releases_to_generate.append(
+                {
+                    "clean_name": f"{anime_title} - Season {s_str} - 1080p - WEBDL",
+                    "is_single": "false",
+                    "desc": f"Full Season {s_str} Pack - AniWatch",
+                }
+            )
+        else:
+            # Sytuacja B: Sonarr robi ogólne zapytanie o sezon (Odcinek: None)
+            releases_to_generate.append(
+                {
+                    "clean_name": f"{anime_title} - Season {s_str} - 1080p - WEBDL",
+                    "is_single": "false",
+                    "desc": f"Full Season {s_str} Pack - AniWatch",
+                }
+            )
+
+        # 3. Dodawanie wydań do drzewa XML
+        for rel in releases_to_generate:
+            clean_name = rel["clean_name"]
+            is_single_flag = rel["is_single"]
+
+            # Ustalanie liczby "seedów/peerów" na podstawie typu wydania
+            if is_single_flag == "true":
+                peers_count = 1
+            else:
+                # Wyciągamy liczbę odcinków z API Anikoto.
+                # Jeśli z jakiegoś powodu pole jest puste lub równe 0, dajemy bezpieczny fallback na 12
+                try:
+                    peers_count = int(anime.get("episodes", 12))
+                    if peers_count == 0:
+                        peers_count = 12
+                except Exception:
+                    peers_count = 12
+
+            # Składamy payload dla /torrents/add
+            payload = f"{clean_name}|||{anikoto_id}|||{is_single_flag}"
+            encoded_payload = urllib.parse.quote(payload)
+            ep_url = f"magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn={encoded_payload}&tr=http://a.b"
+
+            # Unikalny guid z MD5
+            unique_guid = hashlib.md5(
+                f"anikoto_{anikoto_id}_{clean_name}".encode("utf-8")
+            ).hexdigest()
+
+            item = ET.SubElement(channel, "item")
+            ET.SubElement(item, "title").text = clean_name
+            ET.SubElement(item, "guid").text = unique_guid
+            ET.SubElement(item, "link").text = ep_url
+            ET.SubElement(item, "pubDate").text = rfc_date
+            ET.SubElement(item, "description").text = (
+                f"{rel['desc']} ({peers_count} eps)"
+            )
+
+            # Kategorie Torznab
+            ET.SubElement(item, "category").text = chosen_cat
+            ET.SubElement(
+                item,
+                "{http://torznab.com/schemas/2015/feed}attr",
+                {"name": "category", "value": chosen_cat},
+            )
+
+            # --- NOWOŚĆ: Przekazywanie liczby odcinków jako Seeders / Peers dla Sonarra ---
+            ET.SubElement(
+                item,
+                "{http://torznab.com/schemas/2015/feed}attr",
+                {"name": "seeders", "value": str(peers_count)},
+            )
+            ET.SubElement(
+                item,
+                "{http://torznab.com/schemas/2015/feed}attr",
+                {"name": "peers", "value": str(peers_count)},
+            )
+
+            # Enclosure wymagany przez specyfikację RSS
+            ET.SubElement(
+                item,
+                "enclosure",
+                {"url": ep_url, "length": "0", "type": "application/x-bittorrent"},
+            )
+
+    # Renderowanie kompletnego dokumentu XML z wieloma wynikami
     xml_data = ET.tostring(root, encoding="utf-8")
     return Response(content=xml_data, media_type="application/xml")
 
