@@ -108,7 +108,7 @@ async def download_episode(task: TorrentTask):
                         amount_left=0,
                         dlspeed=0,
                         eta=0,
-                        state="completed",  # Zielone światło dla Sonarra do importu
+                        state="uploading",  # Zielone światło dla Sonarra do importu
                     ).where(TorrentTask.hash == task_hash).execute()
                     break  # Udany zapis, przerywamy pętlę retry
                 except OperationalError:
