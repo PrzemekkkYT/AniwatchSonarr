@@ -297,7 +297,7 @@ async def add_torrent(urls: str = Form(...)):
             episode_embed_id=embed["embed_id"],
             episode_num=embed["episode"],
             season_num=int(season),
-            save_path=f"./downloads/{anikoto_id}",
+            save_path=f"/downloads/{anikoto_id}",
             state="queued",
         )
 
