@@ -309,6 +309,38 @@ async def torrents_files(hash: str):
     return files_list
 
 
+@app.get("/api/v2/torrents/properties")
+async def torrents_properties(hash: str):
+    task: TorrentTask | None = TorrentTask.get_or_none(TorrentTask.hash == hash)
+
+    if not task:
+        return Response(content="{}", media_type="application/json", status_code=404)
+
+    # qBittorrent zwraca w properties szczegółowe podsumowanie zadania
+    properties = {
+        "save_path": task.save_path,  # Dokładnie tak jak w /info!
+        "creation_time": task.added_on,
+        "total_size": task.size,
+        "total_downloaded": (
+            task.size if task.state == "uploading" else int(task.size * task.progress)
+        ),
+        "total_uploaded": 0,
+        "total_wasted": 0,
+        "dl_speed": task.dlspeed,
+        "up_speed": 0,
+        "seeding_time": 0,
+        "time_elapsed": int(time.time()) - task.added_on,
+        "share_ratio": 0,
+        "addition_date": task.added_on,
+        "completion_date": task.added_on if task.state == "uploading" else 0,
+        "comment": "Downloaded via yt-dlp Custom Client",
+        "pieces_num": 0,
+        "pieces_have": 0,
+    }
+
+    return properties
+
+
 # INDEXER
 INDEXER_CAPS_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <caps>
