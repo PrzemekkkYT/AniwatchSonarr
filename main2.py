@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import email
+import hashlib
 import html
 import os
 import re
@@ -168,6 +169,41 @@ async def download_episode(task: TorrentTask):
     await loop.run_in_executor(None, run_yt_dlp)
 
 
+async def manage_queue():
+    # Sprawdzamy, ile zadań aktualnie się pobiera
+    current_downloads = (
+        TorrentTask.select().where(TorrentTask.state == "downloading").count()
+    )
+
+    MAX_CONCURRENT_DOWNLOADS = 2
+
+    if current_downloads < MAX_CONCURRENT_DOWNLOADS:
+        slots_available = MAX_CONCURRENT_DOWNLOADS - current_downloads
+
+        # Pobieramy najstarsze zakolejkowane zadania
+        queued_tasks = (
+            TorrentTask.select()
+            .where(TorrentTask.state == "queued")
+            .order_by(TorrentTask.added_on.asc())
+            .limit(slots_available)
+        )
+
+        for task in queued_tasks:
+            task.state = "downloading"
+            task.save()
+            print(f"[*] Uruchamiam pobieranie z kolejki dla: {task.name}")
+            asyncio.create_task(download_episode_and_trigger_next(task))
+
+
+async def download_episode_and_trigger_next(task: TorrentTask):
+    # Wywołujemy Twój dotychczasowy proces pobierania
+    await download_episode(task)
+
+    # Kiedy download_episode się zakończy (niezależnie czy sukces, czy błąd),
+    # wywołujemy manage_queue ponownie, aby wskoczyło następne zadanie!
+    await manage_queue()
+
+
 @app.post("/api/v2/auth/login", response_class=PlainTextResponse)
 async def login(response: Response):
     response.set_cookie(key="SID", value="fake-cookie-12345")
@@ -184,19 +220,29 @@ async def add_torrent(urls: str = Form(...)):
     parsed_url = urllib.parse.urlparse(urls)
     params = urllib.parse.parse_qs(parsed_url.query)
 
-    payload = params["dn"][0]
-    torrent_name, anikoto_id = payload.split("|||")
+    payload: str = params["dn"][0]
+    torrent_name, anikoto_id, single_ep = payload.split("|||")
 
-    match = re.search(r"^(.*?)\s*-\s*S(\d+)E(\d+)", torrent_name)
+    single_ep = single_ep.lower() == "true"
 
-    if match:
-        name = match.group(1).strip()  # Wyciągnie: "Kaguya-sama - Love is War"
-        season = match.group(2)  # Wyciągnie: "01"
-        episode = match.group(3)  # Wyciągnie: "05"
+    # 1. Próbujemy dopasować format pojedynczego odcinka: S01E05
+    match_ep = re.search(r"^(.*?)\s*-\s*S(\d+)E(\d+)", torrent_name)
+
+    # 2. Próbujemy dopasować format całego sezonu: Season 01
+    match_season = re.search(r"^(.*?)\s*-\s*Season\s*(\d+)", torrent_name)
+
+    if match_ep:
+        name = match_ep.group(1).strip()  # Wyciągnie: "Tytuł Anime"
+        season = match_ep.group(2)  # Wyciągnie: "01"
+        episode = match_ep.group(3)  # Wyciągnie: "05"
+    elif match_season:
+        name = match_season.group(1).strip()  # Wyciągnie: "Tytuł Anime"
+        season = match_season.group(2)  # Wyciągnie: "01"
+        episode = "1"  # Domyślny start, ale i tak pętla to nadpisze z API
     else:
-        # Zabezpieczenie awaryjne, gdyby format był zupełnie inny
+        # Zabezpieczenie awaryjne
         name = torrent_name
-        season, episode = "0", "0"
+        season, episode = "1", "1"
 
     # season, episode = season_episode.replace("S", "").split("E")
 
@@ -205,38 +251,56 @@ async def add_torrent(urls: str = Form(...)):
     anime_data = found_anime.get("anime", {})
 
     episodes = found_anime.get("episodes", []) or []
-    embed_id = next(
-        (
-            ep.get("episode_embed_id")
+
+    if single_ep:
+        embeds: list[dict] = [
+            {
+                "embed_id": next(
+                    (
+                        ep.get("episode_embed_id")
+                        for ep in episodes
+                        if ep.get("number") == int(episode)
+                    ),
+                    None,
+                ),
+                "episode": int(episode),
+            }
+        ]
+    else:
+        embeds = [
+            {"embed_id": ep.get("episode_embed_id"), "episode": ep.get("number")}
             for ep in episodes
-            if ep.get("number") == int(episode)
-        ),
-        None,
-    )
+        ]
 
     slug = anime_data.get("slug", "unknown")
-    episode_url = f"https://anikoto.cz/watch/{slug}/ep-{episode}"
 
     title = html.unescape(anime_data.get("title", name))
 
-    task, created = TorrentTask.get_or_create(
-        hash=str(hash(episode_url)),
-        title=title,
-        # name=f"{title} S{season}E{episode}.mp4",
-        name=f"{torrent_name}.mp4",
-        source_url=episode_url,
-        anime_id=anikoto_id,
-        episode_embed_id=embed_id,
-        episode_num=int(episode),
-        season_num=int(season),
-        save_path=f"/downloads/{anikoto_id}",
-    )
+    for embed in embeds:
+        episode_url = f"https://anikoto.cz/watch/{slug}/ep-{embed['episode']}"
 
-    print(type(task))
-    print(task)
-    print(task.source_url)
+        print(episode_url)
 
-    asyncio.create_task(download_episode(task))
+        task_hash = hashlib.md5(episode_url.encode("utf-8")).hexdigest()
+        clean_episode_name = (
+            f"{title} - S{int(season):02d}E{embed['episode']:02d} - 1080p - WEBDL.mp4"
+        )
+
+        task, created = TorrentTask.get_or_create(
+            hash=task_hash,
+            title=title,
+            # name=f"{torrent_name}.mp4",
+            name=clean_episode_name,
+            source_url=episode_url,
+            anime_id=anikoto_id,
+            episode_embed_id=embed["embed_id"],
+            episode_num=embed["episode"],
+            season_num=int(season),
+            save_path=f"./downloads/{anikoto_id}",
+            state="queued",
+        )
+
+    asyncio.create_task(manage_queue())
 
     return Response(content="Ok.", media_type="text/plain")
 
@@ -443,52 +507,39 @@ async def torznab_indexer(
     ep: Optional[int] = None,
     cat: str = None,
 ):
-    # 1. Obsługa zapytania o możliwości (Caps)
-    # Podczas testu Sonarr pyta o caps. Czasem przysyła t=caps, czasem t=tvsearch bez parametrów.
     if t == "caps" or (season is None and ep is None and q is None and t != "tvsearch"):
         return Response(content=INDEXER_CAPS_XML, media_type="application/xml")
 
-    # Dla bezpieczeństwa testów w Sonarrze - zawsze zwracamy kategorię Anime (5070)
-    # Ponieważ Sonarr dla Anime szuka tylko w kategorii 5070 (lub pokrewnych z sekcji Anime)
     chosen_cat = "5070"
 
     # Przygotowanie sezonu/odcinka
     s_str = (
         f"{season:02d}" if season is not None else "01"
     )  # Zmień na 01, Sonarr woli realne numery
-    e_str = f"{ep:02d}" if ep is not None else "01"
-    title_query = q or "Test Anime Episode"
+    e_str = f"{ep:02d}" if ep is not None else "00"
 
     print(f"[*] Sonarr szuka: {q} Sezon: {season} Odcinek: {ep} Cat filter: {cat}")
 
-    # Logika scrapowania Twojego API Anikoto
+    # Logika scrapowania API Anikoto
     if q is not None:
         try:
             anikoto_id = find_anikoto_id(q)
-            # res = requests.get(
-            #     f"https://anikotoapi.site/series/{anikoto_id}", timeout=5
-            # )
-            # anime_data = res.json()
-            # slug = anime_data["data"]["anime"]["slug"]
-            # real_url = f"https://anikoto.cz/watch/{slug}/ep-{e_str}"
         except Exception as e:
             print(f"[!] Błąd pobierania danych z API Anikoto: {e}")
-            # real_url = "https://anikoto.cz/watch/unknown-anime/ep-01"
             anikoto_id = 0
     else:
-        # To wykona się podczas TESTU połączenia w Sonarrze
         anikoto_id = 0
-        # real_url = "https://anikoto.cz/watch/test-anime/ep-01"
 
-    clean_name = f"{q} - S{s_str}E{e_str} - 1080p - WEBDL"
+    if ep is not None:
+        clean_name = f"{q} - S{s_str}E{e_str} - 1080p - WEBDL"
+    else:
+        clean_name = f"{q} - Season {s_str} - 1080p - WEBDL"
 
-    # payload = f"{clean_name}|||{real_url}"
-    payload = f"{clean_name}|||{anikoto_id}"
+    payload = f"{clean_name}|||{anikoto_id}|||{'true' if ep is not None else 'false'}"
 
     encoded_payload = urllib.parse.quote(payload)
 
-    ep_url = f"magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn={encoded_payload}&tr=http://pusty-tracker.com/announce"
-    # ep_url = f"magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn={anikoto_id}&tr=http://pusty-tracker.com/announce"
+    ep_url = f"magnet:?xt=urn:btih:0000000000000000000000000000000000000000&dn={encoded_payload}&tr=http://a.b"
 
     now = datetime.datetime.now()
     rfc_date = email.utils.format_datetime(now)
@@ -501,15 +552,11 @@ async def torznab_indexer(
 
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = clean_name
-    # ET.SubElement(item, "title").text = (
-    #     f"{title_query} - S{s_str}E{e_str} - {anikoto_id} - AniWatch"
-    # )
     ET.SubElement(item, "guid").text = f"anikoto_{anikoto_id}"
     ET.SubElement(item, "link").text = ep_url
     ET.SubElement(item, "pubDate").text = rfc_date
     ET.SubElement(item, "description").text = f"Episode S{s_str}E{e_str} - AniWatch"
 
-    # Te dwa elementy MUSZĄ mieć wartość "5070", aby Sonarr (skonfigurowany pod Anime) zaakceptował wynik
     ET.SubElement(item, "category").text = chosen_cat
     ET.SubElement(
         item,
@@ -520,7 +567,7 @@ async def torznab_indexer(
     ET.SubElement(
         item,
         "enclosure",
-        {"url": ep_url, "length": "1500000000", "type": "application/x-bittorrent"},
+        {"url": ep_url, "length": "0", "type": "application/x-bittorrent"},
     )
 
     xml_data = ET.tostring(root, encoding="utf-8")
