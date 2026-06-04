@@ -673,6 +673,24 @@ async def torznab_indexer(
     return Response(content=xml_data, media_type="application/xml")
 
 
+@app.get("/api/homepage")
+async def get_homepage_stats():
+    """Zwraca podstawowe statystyki dla dashboardu."""
+    total_tasks = TorrentTask.select().count()
+    downloading = TorrentTask.select().where(TorrentTask.state == "downloading").count()
+    queued = TorrentTask.select().where(TorrentTask.state == "queued").count()
+    completed = TorrentTask.select().where(TorrentTask.state == "uploading").count()
+
+    return {
+        "status": "online",
+        "total_tasks": total_tasks,
+        "downloading_count": downloading,
+        "queued_count": queued,
+        "completed_count": completed,
+        "timestamp": int(time.time()),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
